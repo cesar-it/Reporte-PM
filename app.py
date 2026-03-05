@@ -4,7 +4,6 @@ import pandas as pd
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
 import io
-import time
 from collections import defaultdict
 
 # -- CONFIGURACIÓN DESDE SECRETS --
@@ -18,6 +17,15 @@ STATE_EN_CURSO_UX = "EN CURSO DE UX"
 STATE_BACKLOG_SW  = "BACKLOG SOFTWARE | COE"
 STATE_EN_CURSO_SW = "EN CURSO DE SOFTWARE | COE"
 STATE_ATENDIDO    = "ATENDIDO"
+
+# --- UTILIDADES DE FORMATEO ---
+def fmt_dt(s):
+    if s and 'T' in s:
+        return s[:10] + ' ' + s[11:19]
+    return s or ''
+
+def fmt_d(s):
+    return s[:10] if s else ''
 
 # --- CLASES DE EXTRACCIÓN ---
 
@@ -49,7 +57,11 @@ class JiraExtractor:
             payload = {
                 "jql": jql, 
                 "maxResults": 50, 
-                "fields": ["key", "summary", "status", "assignee", "created", "updated", "issuetype", "customfield_12066", "customfield_12067", "customfield_12166"]
+                "fields": [
+                    "key", "summary", "status", "assignee", "created", "updated", 
+                    "issuetype", "resolution", "resolutiondate", "description", 
+                    "labels", "customfield_12066", "customfield_12067", "customfield_12166"
+                ]
             }
             if next_token: payload["nextPageToken"] = next_token
             data = self._post(url, payload)
@@ -63,14 +75,38 @@ class JiraExtractor:
 
     def _parse_issue(self, issue, project_key):
         f = issue.get('fields', {})
-        sg = lambda obj, *keys: (obj.get(keys[0]).get(keys[1]) if obj.get(keys[0]) else '') if len(keys)>1 else obj.get(keys[0], '')
+        
+        # Helper para navegar el JSON de Jira
+        def sg(obj, *keys):
+            r = obj
+            for k in keys:
+                if isinstance(r, dict): r = r.get(k)
+                else: return ''
+            return r or ''
+
+        # Parse de campos personalizados (Arrays o Single)
+        def parse_val(fd):
+            if not fd: return ''
+            if isinstance(fd, list):
+                return ', '.join((i.get('value', str(i)) if isinstance(i, dict) else str(i)) for i in fd)
+            return fd.get('value', str(fd)) if isinstance(fd, dict) else str(fd)
+
         return {
             'proyecto_codigo': project_key,
             'issue_key': issue.get('key', ''),
+            'issue_id': issue.get('id', ''),
             'summary': f.get('summary', ''),
             'status': sg(f, 'status', 'name'),
+            'issue_type': sg(f, 'issuetype', 'name'),
             'assignee': sg(f, 'assignee', 'displayName'),
-            'created_date': f.get('created', '')[:10],
+            'created_date': fmt_d(f.get('created')),
+            'created_datetime': fmt_dt(f.get('created')),
+            'updated_date': fmt_d(f.get('updated')),
+            'updated_datetime': fmt_dt(f.get('updated')),
+            'resolution': sg(f, 'resolution', 'name') or 'Sin resolver',
+            'resolution_date': fmt_d(f.get('resolutiondate')),
+            'resolution_datetime': fmt_dt(f.get('resolutiondate')),
+            'informacion_completada': parse_val(f.get('customfield_12166')),
             'labels': ', '.join(f.get('labels', [])),
         }
 
@@ -83,20 +119,20 @@ class ChangelogExtractor:
     def fetch_changelog(self, issue_key):
         url = f"{self.base}/rest/api/3/issue/{issue_key}/changelog"
         result = []
-        r = requests.get(url, auth=self.auth, headers=self.headers)
-        if r.status_code == 200:
-            for entry in r.json().get('values', []):
-                created = entry.get('created', '')
-                author = entry.get('author', {}).get('displayName', 'Unknown')
-                for item in entry.get('items', []):
-                    if item.get('field', '').lower() == 'status':
-                        result.append({
-                            'issue_key': issue_key,
-                            'from_status': item.get('fromString', ''),
-                            'to_status': item.get('toString', ''),
-                            'change_dt': created[:19].replace('T', ' '),
-                            'changed_by': author,
-                        })
+        try:
+            r = requests.get(url, auth=self.auth, headers=self.headers)
+            if r.status_code == 200:
+                for entry in r.json().get('values', []):
+                    created = entry.get('created', '')
+                    for item in entry.get('items', []):
+                        if item.get('field', '').lower() == 'status':
+                            result.append({
+                                'issue_key': issue_key,
+                                'from_status': item.get('fromString', ''),
+                                'to_status': item.get('toString', ''),
+                                'change_dt': created[:19].replace('T', ' ')
+                            })
+        except: pass
         return result
 
 def compute_times(issue_keys, changelog_list):
@@ -113,9 +149,7 @@ def compute_times(issue_keys, changelog_list):
         for c in changes:
             to_s = c['to_status'].upper().strip()
             from_s = c['from_status'].upper().strip()
-            try:
-                dt = datetime.strptime(c['change_dt'], '%Y-%m-%d %H:%M:%S')
-            except: continue
+            dt = datetime.strptime(c['change_dt'], '%Y-%m-%d %H:%M:%S')
 
             if to_s == STATE_EN_CURSO_UX and ts_ux_in is None:
                 ts_ux_in = dt
@@ -130,54 +164,82 @@ def compute_times(issue_keys, changelog_list):
     return results
 
 # --- INTERFAZ STREAMLIT ---
-
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
-st.title("📊 Extractor de Tiempos JIRA")
+st.title("📊 Extractor de Tiempos JIRA (Completo)")
 
 with st.sidebar:
-    st.header("Configuración")
+    st.header("Filtros de Extracción")
     usuarios_default = ["Angie Tomasto", "Tifany Brissette Ramos Espinoza", "crisbel aguilar", "Miguel Carreño"]
-    selec_usuarios = st.multiselect("Usuarios:", usuarios_default, default=usuarios_default)
-    fecha_inicio = st.date_input("Fecha Inicio", value=datetime(2025, 12, 1))
-    fecha_fin = st.date_input("Fecha Fin", value=datetime.now())
-    boton_ejecutar = st.button("🚀 Generar Reporte")
+    selec_usuarios = st.multiselect("Asignados:", usuarios_default, default=usuarios_default)
+    fecha_inicio = st.date_input("Fecha Inicio (Creación)", value=datetime(2025, 12, 1))
+    fecha_fin = st.date_input("Fecha Fin (Creación)", value=datetime.now())
+    boton_ejecutar = st.button("🚀 Iniciar Extracción")
 
 if boton_ejecutar:
     if not selec_usuarios:
-        st.error("Selecciona usuarios.")
+        st.error("Selecciona al menos un usuario.")
     else:
-        with st.spinner("Procesando datos y tiempos (esto puede tardar)..."):
-            # 1. Extraer Issues
+        with st.spinner("1/3 Extrayendo Issues..."):
             ext = JiraExtractor(USERNAME, API_TOKEN)
             issues = ext.fetch_issues('PM', fecha_inicio.strftime('%Y-%m-%d'), fecha_fin.strftime('%Y-%m-%d'), selec_usuarios)
             
-            if issues:
-                # 2. Extraer Changelogs para los tiempos
+        if issues:
+            with st.spinner("2/3 Procesando Historial de Estados (Changelog)..."):
                 ch_ext = ChangelogExtractor(USERNAME, API_TOKEN)
                 issue_keys = [i['issue_key'] for i in issues]
-                
                 all_changelogs = []
-                bar = st.progress(0)
+                prog_bar = st.progress(0)
                 for idx, key in enumerate(issue_keys):
                     all_changelogs.extend(ch_ext.fetch_changelog(key))
-                    bar.progress((idx + 1) / len(issue_keys))
+                    prog_bar.progress((idx + 1) / len(issue_keys))
                 
-                # 3. Calcular tiempos
                 time_map = compute_times(issue_keys, all_changelogs)
                 
-                # 4. Unir datos
+            with st.spinner("3/3 Consolidando Reporte..."):
                 for i in issues:
                     i['tiempo_ux_horas'] = time_map.get(i['issue_key'], {}).get('tiempo_ux_horas', '')
                     i['tiempo_sw_horas'] = time_map.get(i['issue_key'], {}).get('tiempo_sw_horas', '')
                 
                 df = pd.DataFrame(issues)
-                st.success(f"¡Listo! {len(df)} registros procesados.")
-                st.dataframe(df)
                 
+                # Reordenar columnas para que coincida con tu formato anterior
+                cols_order = [
+                    'proyecto_codigo', 'issue_key', 'issue_id', 'summary', 'status', 
+                    'issue_type', 'assignee', 'created_date', 'created_datetime', 
+                    'updated_date', 'updated_datetime', 'resolution', 
+                    'resolution_date', 'resolution_datetime', 'tiempo_ux_horas', 
+                    'tiempo_sw_horas', 'informacion_completada'
+                ]
+                df = df[cols_order]
+
+                st.success(f"Extracción exitosa: {len(df)} registros.")
+                st.dataframe(df.head(20)) # Vista previa rápida
+                
+                # Crear Excel con formato
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    df.to_excel(writer, index=False)
-                
-                st.download_button("📥 Descargar Excel", output.getvalue(), "reporte_jira.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            else:
-                st.warning("No hay datos.")
+                    df.to_excel(writer, index=False, sheet_name='Reporte Tiempos')
+                    ws = writer.sheets['Reporte Tiempos']
+                    
+                    # Formato de cabeceras (azul para general, naranja para tiempos)
+                    from openpyxl.styles import PatternFill, Font, Alignment
+                    header_fill = PatternFill("solid", fgColor="1a73e8")
+                    time_fill = PatternFill("solid", fgColor="FFC000")
+                    white_font = Font(bold=True, color="FFFFFF")
+                    
+                    for cell in ws[1]:
+                        if "tiempo" in cell.value:
+                            cell.fill = time_fill
+                        else:
+                            cell.fill = header_fill
+                            cell.font = white_font
+                        cell.alignment = Alignment(horizontal='center')
+
+                st.download_button(
+                    label="📥 Descargar Reporte Excel",
+                    data=output.getvalue(),
+                    file_name=f"reporte_jira_completo_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+        else:
+            st.warning("No se encontraron tickets con esos filtros.")
