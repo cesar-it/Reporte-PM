@@ -165,7 +165,7 @@ def compute_times(issue_keys, changelog_list):
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
-st.title("📊 Extractor de Tiempos JIRA (Completo)")
+st.title("Reporte de Tiempos Jira (👴🏻)")
 
 with st.sidebar:
     st.header("Filtros de Extracción")
@@ -173,7 +173,7 @@ with st.sidebar:
     selec_usuarios = st.multiselect("Asignados:", usuarios_default, default=usuarios_default)
     fecha_inicio = st.date_input("Fecha Inicio (Creación)", value=datetime(2025, 12, 1))
     fecha_fin = st.date_input("Fecha Fin (Creación)", value=datetime.now())
-    boton_ejecutar = st.button("🚀 Iniciar Extracción")
+    boton_ejecutar = st.button("Iniciar Extracción")
 
 if boton_ejecutar:
     if not selec_usuarios:
@@ -236,10 +236,11 @@ if boton_ejecutar:
                         cell.alignment = Alignment(horizontal='center')
 
                 st.download_button(
-                    label="📥 Descargar Reporte Excel",
+                    label=" Descargar Reporte Excel",
                     data=output.getvalue(),
                     file_name=f"reporte_jira_completo_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
             st.warning("No se encontraron tickets con esos filtros.")
+
