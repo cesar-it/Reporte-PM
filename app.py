@@ -165,7 +165,7 @@ def compute_times(issue_keys, changelog_list):
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
-st.title("Reporte de Tiempos Jira (👴🏻)")
+st.title("Reporte de Tiempos Jira TD 👴🏻")
 
 with st.sidebar:
     st.header("Filtros de Extracción")
@@ -236,11 +236,12 @@ if boton_ejecutar:
                         cell.alignment = Alignment(horizontal='center')
 
                 st.download_button(
-                    label=" Descargar Reporte Excel",
+                    label="🦀 Descargar Reporte Excel",
                     data=output.getvalue(),
                     file_name=f"reporte_jira_completo_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
             st.warning("No se encontraron tickets con esos filtros.")
+
 
