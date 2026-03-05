@@ -166,6 +166,18 @@ def compute_times(issue_keys, changelog_list):
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
 st.title("Reporte de Tiempos Jira TD 👴🏻")
+# --- OCULTAR ICONO DE GITHUB Y MENÚ ---
+hide_github_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stAppDeployButton {display:none;}
+    [data-testid="stActionButtonIcon"] {display: none;}
+    [data-testid="stAppDeployButton"] {display: none;}
+    header {visibility: hidden;}
+    </style>
+    """
+st.markdown(hide_github_style, unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Filtros de Extracción")
@@ -243,5 +255,6 @@ if boton_ejecutar:
                 )
         else:
             st.warning("No se encontraron tickets con esos filtros.")
+
 
 
