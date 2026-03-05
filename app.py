@@ -85,7 +85,7 @@ st.markdown("Configura los filtros y descarga el reporte en Excel.")
 
 with st.sidebar:
     st.header("Configuración")
-    usuarios_default = ["Angie Tomasto", "Tifany Ramos", "crisbel aguilar", "Miguel Carreño"]
+    usuarios_default = ["Angie Tomasto", "Tifany Brissette Ramos Espinoza", "crisbel aguilar", "Miguel Carreño"]
     selec_usuarios = st.multiselect("Usuarios a consultar:", usuarios_default, default=usuarios_default)
     
     fecha_inicio = st.date_input("Fecha Inicio", value=datetime(2025, 12, 1))
@@ -119,4 +119,5 @@ if boton_ejecutar:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             else:
+
                 st.warning("No se encontraron resultados.")
