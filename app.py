@@ -165,7 +165,7 @@ def compute_times(issue_keys, changelog_list):
 
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
-st.title("Reporte de Tiempos Jira TD 👴🏻")
+st.title("Reporte de Tiempos Jira TD")
 # --- OCULTAR ICONO DE GITHUB Y MENÚ ---
 hide_github_style = """
     <style>
@@ -255,6 +255,7 @@ if boton_ejecutar:
                 )
         else:
             st.warning("No se encontraron tickets con esos filtros.")
+
 
 
 
