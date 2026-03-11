@@ -166,7 +166,7 @@ def compute_times(issue_keys, changelog_list):
 # --- INTERFAZ STREAMLIT ---
 st.set_page_config(page_title="Jira Reporter TD", layout="wide")
 st.title("Reporte de Tiempos Jira TD")
-# --- OCULTAR ICONO DE GITHUB Y MENÚ ---
+# --- OCULTAR ICONO DE GITHUB Y MENÚ---
 hide_github_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -248,13 +248,16 @@ if boton_ejecutar:
                         cell.alignment = Alignment(horizontal='center')
 
                 st.download_button(
+                    # NOMBRE PARA EL BOTÓN DE DESCARGA
                     label="🦀 Descargar Reporte Excel",
                     data=output.getvalue(),
+                    # NOMBRE DEL ARCHIVO (PUEDE SER FIJO O VARIABLE O VARIABLE PARA SU DESCARGA)
                     file_name=f"reporte_jira_completo_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
             st.warning("No se encontraron tickets con esos filtros.")
+
 
 
 
