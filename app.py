@@ -1,52 +1,26 @@
 # ============================================================
-# EXTRACTOR JIRA OPTIMIZADO - CON TIEMPO UX Y TIEMPO SW
-# Compatible con Google Colab y Streamlit
+# EXTRACTOR JIRA - STREAMLIT
+# Credenciales via st.secrets
 # ============================================================
 
 import os
-import sys
+import io
 import time
-import shutil
 import requests
 import pandas as pd
+import streamlit as st
 from requests.auth import HTTPBasicAuth
 from datetime import datetime
 from collections import defaultdict
 
 # ============================================================
-# DETECCIÓN DE ENTORNO
+# CONFIGURACIÓN ESTÁTICA
 # ============================================================
 
-def detect_env():
-    """Retorna 'streamlit', 'colab' o 'script'."""
-    try:
-        import streamlit as st
-        # Si streamlit está importado Y hay un runtime activo
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-        if get_script_run_ctx() is not None:
-            return 'streamlit'
-    except Exception:
-        pass
-    try:
-        import google.colab
-        return 'colab'
-    except Exception:
-        pass
-    return 'script'
-
-ENV = detect_env()
-
-# ============================================================
-# CONFIGURACIÓN GLOBAL
-# ============================================================
-
-JIRA_URL     = "https://prestamype.atlassian.net"
-USERNAME = st.secrets["JIRA_USER"]
-API_TOKEN = st.secrets["JIRA_TOKEN"]
 PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
-    "Angie Tomasto", "valeria vergaray",
+    "Angie Tomasto", "Tifany Brissette Ramos Espinoza",
     "crisbel aguilar", "Miguel Carreño"
 ]
 
@@ -66,9 +40,16 @@ ALL_STATUSES = [
     "CANCELADO",
 ]
 
+# ============================================================
+# CREDENCIALES DESDE st.secrets
+# ============================================================
+
+JIRA_URL  = st.secrets["JIRA_URL"]
+USERNAME  = st.secrets["JIRA_USER"]
+API_TOKEN = st.secrets["JIRA_TOKEN"]
 
 # ============================================================
-# CLASES JIRA (compartidas, sin dependencia de UI)
+# CLASE: EXTRACTOR DE ISSUES
 # ============================================================
 
 class JiraExtractor:
@@ -94,7 +75,7 @@ class JiraExtractor:
         except Exception as e:
             return False, str(e)
 
-    def fetch_issues(self, project_key, date_from_str, date_to_str, progress_cb=None):
+    def fetch_issues(self, project_key, date_from_str, date_to_str, log_fn=None):
         url = f"{self.base}/rest/api/3/search/jql"
         assignees_jql = ', '.join(f'"{a}"' for a in ASSIGNEES)
         jql = (
@@ -107,9 +88,11 @@ class JiraExtractor:
         all_issues = []
         next_token = None
         page = 0
+
         while True:
             payload = {
-                "jql": jql, "maxResults": 50,
+                "jql": jql,
+                "maxResults": 50,
                 "fields": [
                     "key", "summary", "status", "assignee",
                     "created", "updated", "issuetype",
@@ -119,19 +102,23 @@ class JiraExtractor:
             }
             if next_token:
                 payload["nextPageToken"] = next_token
+
             data   = self._post(url, payload)
             issues = data.get('issues', [])
             if not issues:
                 break
+
             page += 1
             for issue in issues:
                 all_issues.append(self._parse_issue(issue, project_key))
-            if progress_cb:
-                progress_cb(f"Pagina {page}: {len(all_issues)} issues acumulados")
+            if log_fn:
+                log_fn(f"Página {page}: {len(all_issues)} issues acumulados")
+
             next_token = data.get('nextPageToken')
             if not next_token:
                 break
             time.sleep(0.3)
+
         return all_issues
 
     def _parse_issue(self, issue, project_key):
@@ -162,7 +149,10 @@ class JiraExtractor:
         def parse_arr(fd):
             if not fd: return ''
             if isinstance(fd, list):
-                return ', '.join((i.get('value', str(i)) if isinstance(i, dict) else str(i)) for i in fd)
+                return ', '.join(
+                    (i.get('value', str(i)) if isinstance(i, dict) else str(i))
+                    for i in fd
+                )
             return str(fd)
 
         def parse_single(fd):
@@ -192,6 +182,10 @@ class JiraExtractor:
         }
 
 
+# ============================================================
+# CLASE: EXTRACTOR DE CHANGELOG
+# ============================================================
+
 class ChangelogExtractor:
     def __init__(self):
         self.auth    = HTTPBasicAuth(USERNAME, API_TOKEN)
@@ -202,16 +196,20 @@ class ChangelogExtractor:
         url    = f"{self.base}/rest/api/3/issue/{issue_key}/changelog"
         result = []
         start  = 0
+
         while True:
             try:
-                r = requests.get(url, params={'startAt': start, 'maxResults': 100},
-                                 auth=self.auth, headers=self.headers)
+                r = requests.get(
+                    url, params={'startAt': start, 'maxResults': 100},
+                    auth=self.auth, headers=self.headers
+                )
                 if r.status_code != 200:
                     break
                 data   = r.json()
                 values = data.get('values', [])
                 if not values:
                     break
+
                 for entry in values:
                     created = entry.get('created', '')
                     author  = entry.get('author', {}).get('displayName', 'Unknown')
@@ -224,26 +222,30 @@ class ChangelogExtractor:
                                 'change_dt':   created[:19].replace('T', ' ') if len(created) >= 19 else created,
                                 'changed_by':  author,
                             })
+
                 if data.get('isLast', True):
                     break
                 start += 100
             except Exception:
                 break
+
         return result
 
-    def fetch_all(self, issue_keys, progress_cb=None):
+    def fetch_all(self, issue_keys, progress_bar=None, log_fn=None):
         all_changes = []
         total = len(issue_keys)
         for i, key in enumerate(issue_keys, 1):
             all_changes.extend(self.fetch_changelog(key))
-            if progress_cb and (i % 20 == 0 or i == total):
-                progress_cb(i / total, f"Changelog {i}/{total}")
+            if progress_bar:
+                progress_bar.progress(i / total, text=f"Changelog {i}/{total} issues")
+            if log_fn and (i % 20 == 0 or i == total):
+                log_fn(f"Changelog {i}/{total}")
             time.sleep(0.12)
         return all_changes
 
 
 # ============================================================
-# LÓGICA DE NEGOCIO (sin UI)
+# LÓGICA DE NEGOCIO
 # ============================================================
 
 def compute_times(issue_keys, changelog_list):
@@ -268,13 +270,13 @@ def compute_times(issue_keys, changelog_list):
                 continue
 
             if to_s == STATE_EN_CURSO_UX and ts_ux_in is None:
-                ts_ux_in = dt
+                ts_ux_in      = dt
                 dt_entrada_ux = dt.date()
 
             if (from_s == STATE_EN_CURSO_UX and
                     to_s in (STATE_BACKLOG_SW, STATE_EN_CURSO_SW) and
                     ts_ux_in is not None and t_ux is None):
-                t_ux = round((dt - ts_ux_in).total_seconds() / 3600, 2)
+                t_ux         = round((dt - ts_ux_in).total_seconds() / 3600, 2)
                 dt_salida_sw = dt.date()
 
             if to_s == STATE_EN_CURSO_SW and ts_sw_in is None:
@@ -298,8 +300,8 @@ def compute_times(issue_keys, changelog_list):
 
 def apply_filters(issues, time_map,
                   selected_statuses,
-                  ux_filter_active, ux_from, ux_to,
-                  sw_filter_active, sw_from, sw_to):
+                  ux_active, ux_from, ux_to,
+                  sw_active, sw_from, sw_to):
     filtered = []
     for issue in issues:
         key = issue['issue_key']
@@ -309,7 +311,7 @@ def apply_filters(issues, time_map,
             if issue['status'].upper().strip() not in [s.upper().strip() for s in selected_statuses]:
                 continue
 
-        if ux_filter_active:
+        if ux_active:
             fecha_ux = tm.get('fecha_entrada_ux', '')
             if not fecha_ux:
                 continue
@@ -319,7 +321,7 @@ def apply_filters(issues, time_map,
             except Exception:
                 continue
 
-        if sw_filter_active:
+        if sw_active:
             fecha_sw = tm.get('fecha_salida_sw', '')
             if not fecha_sw:
                 continue
@@ -333,12 +335,7 @@ def apply_filters(issues, time_map,
     return filtered
 
 
-def build_excel_bytes(issues, time_map, changelog_list, filename_base):
-    """
-    Genera el Excel en memoria y retorna (bytes, filename).
-    Usado tanto por Colab (guarda en Drive) como por Streamlit (descarga directa).
-    """
-    import io
+def build_excel_bytes(issues, time_map, changelog_list):
     from openpyxl.styles import PatternFill, Font, Alignment
 
     df = pd.DataFrame(issues)
@@ -364,17 +361,18 @@ def build_excel_bytes(issues, time_map, changelog_list, filename_base):
     keys_in_report = set(df['issue_key'].tolist())
     cl_filtered = [c for c in changelog_list if c['issue_key'] in keys_in_report]
     df_cl = pd.DataFrame(cl_filtered) if cl_filtered else pd.DataFrame(
-        columns=['issue_key', 'from_status', 'to_status', 'change_dt', 'changed_by'])
+        columns=['issue_key', 'from_status', 'to_status', 'change_dt', 'changed_by']
+    )
     if not df_cl.empty:
         df_cl = df_cl.sort_values(['issue_key', 'change_dt']).reset_index(drop=True)
     df_cl.columns = ['Issue Key', 'De Estado', 'A Estado', 'Fecha y Hora', 'Modificado por']
 
-    def style_header(ws, columns, special_cols, sp_fill, sp_font):
+    def style_header(ws, columns, special_cols, sp_fill, sp_font_color):
         for i, col in enumerate(columns, 1):
             cell = ws.cell(row=1, column=i)
-            is_sp = col in special_cols
+            is_sp          = col in special_cols
             cell.fill      = PatternFill("solid", fgColor=sp_fill if is_sp else "1a73e8")
-            cell.font      = Font(bold=True, color=sp_font if is_sp else "FFFFFF", size=10)
+            cell.font      = Font(bold=True, color=sp_font_color if is_sp else "FFFFFF", size=10)
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     col_w_issues = {
@@ -396,6 +394,7 @@ def build_excel_bytes(issues, time_map, changelog_list, filename_base):
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # Hoja 1: Issues
         df.to_excel(writer, index=False, sheet_name='Issues')
         ws_i = writer.sheets['Issues']
         style_header(ws_i, df.columns,
@@ -405,6 +404,7 @@ def build_excel_bytes(issues, time_map, changelog_list, filename_base):
             ws_i.column_dimensions[ws_i.cell(row=1, column=i).column_letter].width = col_w_issues.get(col, 18)
         ws_i.freeze_panes = 'A2'
 
+        # Hoja 2: Changelog
         df_cl.to_excel(writer, index=False, sheet_name='Changelog')
         ws_c = writer.sheets['Changelog']
         style_header(ws_c, df_cl.columns,
@@ -414,311 +414,149 @@ def build_excel_bytes(issues, time_map, changelog_list, filename_base):
         ws_c.freeze_panes = 'A2'
 
     output.seek(0)
-    safe = "".join(c for c in filename_base.strip() if c.isalnum() or c in ('_', '-')).strip() or 'jira_report'
-    return output.read(), f"{safe}.xlsx"
+    return output.read()
 
 
 # ============================================================
-# MODO STREAMLIT
+# UI STREAMLIT
 # ============================================================
 
-def run_streamlit():
-    import streamlit as st
+st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
+st.title("📊 Extractor JIRA — Reporte TD")
 
-    st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-    st.title("📊 Extractor JIRA — Reporte TD")
+# ── Sidebar ─────────────────────────────────────────────────
+with st.sidebar:
+    st.header("⚙️ Configuración")
 
-    # ── Sidebar: todos los filtros ──────────────────────────
-    with st.sidebar:
-        st.header("⚙️ Configuración")
+    st.subheader("📅 Creación del ticket")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date())
+    with col_b:
+        date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date())
 
-        st.subheader("📅 Creación del ticket")
-        col1, col2 = st.columns(2)
-        with col1:
-            date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date())
-        with col2:
-            date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date())
-
-        st.subheader("🔖 Estado del ticket")
-        selected_statuses = st.multiselect(
-            "Estados (vacío = todos)",
-            options=ALL_STATUSES,
-            default=[]
-        )
-
-        st.subheader("🎨 Transición → EN CURSO UX")
-        ux_active = st.checkbox("Activar filtro UX", value=False)
-        ux_from = st.date_input("UX Desde", value=datetime(2025, 12, 1).date(),
-                                disabled=not ux_active, key="ux_from")
-        ux_to   = st.date_input("UX Hasta", value=datetime(2025, 12, 31).date(),
-                                disabled=not ux_active, key="ux_to")
-
-        st.subheader("💻 Transición → BACKLOG / EN CURSO SW")
-        sw_active = st.checkbox("Activar filtro SW", value=False)
-        sw_from = st.date_input("SW Desde", value=datetime(2025, 12, 1).date(),
-                                disabled=not sw_active, key="sw_from")
-        sw_to   = st.date_input("SW Hasta", value=datetime(2025, 12, 31).date(),
-                                disabled=not sw_active, key="sw_to")
-
-        st.subheader("💾 Nombre del archivo")
-        filename_base = st.text_input("Nombre (sin .xlsx)", value="reporte_jira_TD")
-
-        run_btn = st.button("🚀 Ejecutar extracción", type="primary", use_container_width=True)
-
-    # ── Panel principal ─────────────────────────────────────
-    if not run_btn:
-        st.info("Configura los filtros en el panel izquierdo y presiona **Ejecutar extracción**.")
-        return
-
-    extractor    = JiraExtractor()
-    ok, username = extractor.test_connection()
-    if not ok:
-        st.error(f"Error de conexión: {username}")
-        return
-
-    st.success(f"Conectado como: {username}")
-
-    ch_extractor = ChangelogExtractor()
-    all_issues   = []
-
-    # Extracción de issues
-    with st.status("Extrayendo issues...", expanded=True) as status:
-        for pk in PROJECT_KEYS:
-            st.write(f"Proyecto: {pk}")
-            def cb_issues(msg): st.write(msg)
-            issues = extractor.fetch_issues(pk,
-                                            date_from.strftime('%Y-%m-%d'),
-                                            date_to.strftime('%Y-%m-%d'),
-                                            progress_cb=cb_issues)
-            all_issues.extend(issues)
-        status.update(label=f"Issues extraídos: {len(all_issues)}", state="complete")
-
-    if not all_issues:
-        st.warning("No se encontraron issues en el rango seleccionado.")
-        return
-
-    # Extracción de changelog
-    issue_keys = [i['issue_key'] for i in all_issues]
-    changelog  = []
-    with st.status("Extrayendo changelog...", expanded=True) as status:
-        prog = st.progress(0)
-        def cb_cl(pct, msg):
-            prog.progress(pct)
-            st.write(msg)
-        changelog = ch_extractor.fetch_all(issue_keys, progress_cb=cb_cl)
-        status.update(label=f"Changelog extraído: {len(changelog)} cambios", state="complete")
-
-    # Cálculo y filtros
-    with st.spinner("Calculando tiempos y aplicando filtros..."):
-        time_map        = compute_times(issue_keys, changelog)
-        filtered_issues = apply_filters(
-            all_issues, time_map,
-            selected_statuses,
-            ux_active, ux_from, ux_to,
-            sw_active, sw_from, sw_to,
-        )
-
-    if not filtered_issues:
-        st.warning("Ningún issue pasó los filtros aplicados. Ajusta los criterios.")
-        return
-
-    # Métricas resumen
-    ux_count = sum(1 for v in time_map.values() if v['tiempo_ux_horas'] != '')
-    sw_count = sum(1 for v in time_map.values() if v['tiempo_sw_horas'] != '')
-    cl_count = len([c for c in changelog if c['issue_key'] in {i['issue_key'] for i in filtered_issues}])
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Issues en reporte", len(filtered_issues))
-    c2.metric("Con Tiempo UX",     ux_count)
-    c3.metric("Con Tiempo SW",     sw_count)
-    c4.metric("Registros changelog", cl_count)
-
-    # Generar Excel y botón de descarga
-    with st.spinner("Generando Excel..."):
-        excel_bytes, excel_filename = build_excel_bytes(
-            filtered_issues, time_map, changelog, filename_base
-        )
-
-    st.download_button(
-        label="⬇️ Descargar reporte Excel",
-        data=excel_bytes,
-        file_name=excel_filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary",
-        use_container_width=True,
+    st.subheader("🔖 Estado del ticket")
+    selected_statuses = st.multiselect(
+        "Estados (vacío = todos)",
+        options=ALL_STATUSES,
+        default=[]
     )
 
-    # Preview de issues
-    with st.expander("Vista previa de issues (primeras 50 filas)"):
-        df_preview = pd.DataFrame(filtered_issues)[
-            ['issue_key', 'summary', 'status', 'assignee', 'created_date']
-        ].head(50)
-        st.dataframe(df_preview, use_container_width=True)
+    st.subheader("🎨 Transición → EN CURSO UX")
+    ux_active = st.checkbox("Activar filtro UX", value=False)
+    ux_from   = st.date_input("UX Desde", value=datetime(2025, 12, 1).date(),
+                               disabled=not ux_active, key="ux_from")
+    ux_to     = st.date_input("UX Hasta", value=datetime(2025, 12, 31).date(),
+                               disabled=not ux_active, key="ux_to")
 
+    st.subheader("💻 Transición → BACKLOG / EN CURSO SW")
+    sw_active = st.checkbox("Activar filtro SW", value=False)
+    sw_from   = st.date_input("SW Desde", value=datetime(2025, 12, 1).date(),
+                               disabled=not sw_active, key="sw_from")
+    sw_to     = st.date_input("SW Hasta", value=datetime(2025, 12, 31).date(),
+                               disabled=not sw_active, key="sw_to")
 
-# ============================================================
-# MODO COLAB
-# ============================================================
+    st.subheader("💾 Nombre del archivo")
+    filename_input = st.text_input("Nombre (sin .xlsx)", value="reporte_jira_TD")
 
-def run_colab():
-    from google.colab import drive, files
-    import ipywidgets as widgets
-    from IPython.display import display
+    run_btn = st.button("🚀 Ejecutar extracción", type="primary", use_container_width=True)
 
-    drive.mount('/content/drive')
-    DRIVE_FOLDER = '/content/drive/MyDrive/JIRA_Reports/TD'
+# ── Panel principal ──────────────────────────────────────────
+if not run_btn:
+    st.info("Configura los filtros en el panel izquierdo y presiona **Ejecutar extracción**.")
+    st.stop()
 
-    style_l  = {'description_width': '160px'}
-    lay_w    = widgets.Layout(width='420px')
-    lay_date = widgets.Layout(width='280px')
+# Validación de fechas
+if date_from > date_to:
+    st.error("La fecha de inicio no puede ser mayor a la fecha fin.")
+    st.stop()
 
-    sec1 = widgets.HTML("<b style='color:#1a73e8'>📅 Rango de creación del ticket</b>")
-    date_from = widgets.DatePicker(description='Fecha inicio:', value=datetime(2025, 12, 1).date(),
-                                   style=style_l, layout=lay_date)
-    date_to   = widgets.DatePicker(description='Fecha fin:',   value=datetime(2025, 12, 31).date(),
-                                   style=style_l, layout=lay_date)
+# Conexión
+extractor = JiraExtractor()
+ok, display_name = extractor.test_connection()
+if not ok:
+    st.error(f"Error de conexión con JIRA: {display_name}")
+    st.stop()
+st.success(f"✅ Conectado como: {display_name}")
 
-    sec2 = widgets.HTML("<b style='color:#1a73e8'>🔖 Estado del ticket</b>"
-                        "<br><small>Sin selección = todos los estados.</small>")
-    status_filter = widgets.SelectMultiple(options=ALL_STATUSES, value=[],
-                                           rows=8, layout=widgets.Layout(width='380px'))
+ch_extractor = ChangelogExtractor()
+all_issues   = []
 
-    sec3 = widgets.HTML("<b style='color:#1a73e8'>🎨 Transición → EN CURSO UX</b>")
-    ux_toggle  = widgets.Checkbox(value=False, description='Activar filtro UX')
-    ux_d_from  = widgets.DatePicker(description='Desde:', value=datetime(2025, 12, 1).date(),
-                                    style=style_l, layout=lay_date, disabled=True)
-    ux_d_to    = widgets.DatePicker(description='Hasta:', value=datetime(2025, 12, 31).date(),
-                                    style=style_l, layout=lay_date, disabled=True)
-    def on_ux(c):
-        ux_d_from.disabled = not c['new']
-        ux_d_to.disabled   = not c['new']
-    ux_toggle.observe(on_ux, names='value')
-
-    sec4 = widgets.HTML("<b style='color:#1a73e8'>💻 Transición → BACKLOG / EN CURSO SW</b>")
-    sw_toggle  = widgets.Checkbox(value=False, description='Activar filtro SW')
-    sw_d_from  = widgets.DatePicker(description='Desde:', value=datetime(2025, 12, 1).date(),
-                                    style=style_l, layout=lay_date, disabled=True)
-    sw_d_to    = widgets.DatePicker(description='Hasta:', value=datetime(2025, 12, 31).date(),
-                                    style=style_l, layout=lay_date, disabled=True)
-    def on_sw(c):
-        sw_d_from.disabled = not c['new']
-        sw_d_to.disabled   = not c['new']
-    sw_toggle.observe(on_sw, names='value')
-
-    sec5 = widgets.HTML("<b style='color:#1a73e8'>💾 Nombre del archivo</b>")
-    file_name_input = widgets.Text(description='Nombre archivo:', value='reporte_jira_TD',
-                                   placeholder='Sin extensión .xlsx', style=style_l, layout=lay_w)
-
-    display(
-        widgets.HTML("<h3 style='color:#1a73e8'>⚙️ Configuración de extracción JIRA</h3>"),
-        sec1, date_from, date_to,
-        widgets.HTML("<hr>"),
-        sec2, status_filter,
-        widgets.HTML("<hr>"),
-        sec3, ux_toggle, ux_d_from, ux_d_to,
-        widgets.HTML("<hr>"),
-        sec4, sw_toggle, sw_d_from, sw_d_to,
-        widgets.HTML("<hr>"),
-        sec5, file_name_input,
-    )
-    print("\n[OK] Widgets cargados. Ajusta los filtros y llama a execute_colab().")
-
-    def execute_colab():
-        date_from_str   = date_from.value.strftime('%Y-%m-%d')
-        date_to_str     = date_to.value.strftime('%Y-%m-%d')
-        custom_filename = file_name_input.value.strip() or 'jira_report'
-        selected_statuses = list(status_filter.value)
-
-        print("=" * 60)
-        print(f"  Creacion : {date_from_str} -> {date_to_str}")
-        print(f"  Estados  : {selected_statuses or 'Todos'}")
-        print(f"  Archivo  : {custom_filename}.xlsx")
-        print("=" * 60)
-
-        extractor = JiraExtractor()
-        ok, uname = extractor.test_connection()
-        if not ok:
-            print(f"[ERROR] {uname}")
-            return
-
-        print(f"[OK] Conectado como: {uname}")
-        ch_extractor = ChangelogExtractor()
-        all_issues   = []
-
-        for pk in PROJECT_KEYS:
-            print(f"\nProyecto: {pk}")
-            issues = extractor.fetch_issues(pk, date_from_str, date_to_str,
-                                            progress_cb=lambda m: print(f"  {m}"))
-            all_issues.extend(issues)
-
-        if not all_issues:
-            print("[ADVERTENCIA] Sin issues en el rango.")
-            return
-
-        issue_keys = [i['issue_key'] for i in all_issues]
-        print(f"\nChangelog de {len(issue_keys)} issues...")
-
-        def cl_cb(pct, msg):
-            print(f"  {msg}")
-        changelog = ch_extractor.fetch_all(issue_keys, progress_cb=cl_cb)
-
-        print("\nCalculando tiempos...")
-        time_map = compute_times(issue_keys, changelog)
-
-        print("Aplicando filtros...")
-        filtered = apply_filters(
-            all_issues, time_map,
-            selected_statuses,
-            ux_toggle.value, ux_d_from.value, ux_d_to.value,
-            sw_toggle.value, sw_d_from.value, sw_d_to.value,
+# Paso 1: Issues
+with st.status("Extrayendo issues...", expanded=True) as status_issues:
+    for pk in PROJECT_KEYS:
+        st.write(f"Proyecto: **{pk}**")
+        issues = extractor.fetch_issues(
+            pk,
+            date_from.strftime('%Y-%m-%d'),
+            date_to.strftime('%Y-%m-%d'),
+            log_fn=lambda m: st.write(m)
         )
-        print(f"  Issues en reporte: {len(filtered)} de {len(all_issues)}")
+        all_issues.extend(issues)
+    status_issues.update(
+        label=f"✅ Issues extraídos: {len(all_issues)}",
+        state="complete"
+    )
 
-        if not filtered:
-            print("[ADVERTENCIA] Ningún issue pasó los filtros.")
-            return
+if not all_issues:
+    st.warning("No se encontraron issues en el rango de fechas seleccionado.")
+    st.stop()
 
-        excel_bytes, excel_filename = build_excel_bytes(filtered, time_map, changelog, custom_filename)
+# Paso 2: Changelog
+issue_keys = [i['issue_key'] for i in all_issues]
+with st.status("Extrayendo changelog...", expanded=True) as status_cl:
+    prog_bar = st.progress(0, text="Iniciando...")
+    changelog = ch_extractor.fetch_all(issue_keys, progress_bar=prog_bar)
+    status_cl.update(
+        label=f"✅ Changelog extraído: {len(changelog)} cambios de estado",
+        state="complete"
+    )
 
-        # Guardar en Drive
-        os.makedirs(DRIVE_FOLDER, exist_ok=True)
-        drive_path = os.path.join(DRIVE_FOLDER, excel_filename)
-        with open(drive_path, 'wb') as fh:
-            fh.write(excel_bytes)
-        print(f"\n[OK] Guardado en Drive: {drive_path}")
+# Paso 3: Tiempos + filtros
+with st.spinner("Calculando tiempos y aplicando filtros..."):
+    time_map        = compute_times(issue_keys, changelog)
+    filtered_issues = apply_filters(
+        all_issues, time_map,
+        selected_statuses,
+        ux_active, ux_from, ux_to,
+        sw_active, sw_from, sw_to,
+    )
 
-        # También ofrecer descarga directa en Colab
-        local_path = f'/content/{excel_filename}'
-        with open(local_path, 'wb') as fh:
-            fh.write(excel_bytes)
-        files.download(local_path)
+if not filtered_issues:
+    st.warning("Ningún issue pasó los filtros aplicados. Ajusta los criterios en el sidebar.")
+    st.stop()
 
-        ux_count = sum(1 for v in time_map.values() if v['tiempo_ux_horas'] != '')
-        sw_count = sum(1 for v in time_map.values() if v['tiempo_sw_horas'] != '')
-        print("\n" + "=" * 60)
-        print(f"  Issues en reporte     : {len(filtered)}")
-        print(f"  Tickets con Tiempo UX : {ux_count}")
-        print(f"  Tickets con Tiempo SW : {sw_count}")
-        print(f"  Archivo               : {excel_filename}")
-        print("=" * 60)
+# Métricas
+ux_count = sum(1 for v in time_map.values() if v['tiempo_ux_horas'] != '')
+sw_count = sum(1 for v in time_map.values() if v['tiempo_sw_horas'] != '')
+cl_count = len([c for c in changelog if c['issue_key'] in {i['issue_key'] for i in filtered_issues}])
 
-    return execute_colab
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Issues en reporte",    len(filtered_issues))
+m2.metric("Con Tiempo UX (hrs)",  ux_count)
+m3.metric("Con Tiempo SW (hrs)",  sw_count)
+m4.metric("Registros changelog",  cl_count)
 
+# Paso 4: Generar Excel
+with st.spinner("Generando archivo Excel..."):
+    excel_bytes = build_excel_bytes(filtered_issues, time_map, changelog)
 
-# ============================================================
-# ENTRY POINT
-# ============================================================
+safe_name = "".join(c for c in filename_input.strip() if c.isalnum() or c in ('_', '-')).strip() or 'jira_report'
+excel_filename = f"{safe_name}.xlsx"
 
-if ENV == 'streamlit':
-    run_streamlit()
+st.download_button(
+    label="⬇️ Descargar reporte Excel",
+    data=excel_bytes,
+    file_name=excel_filename,
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    type="primary",
+    use_container_width=True,
+)
 
-elif ENV == 'colab':
-    # En Colab: ejecuta run_colab() para mostrar widgets,
-    # luego llama execute_colab() para iniciar la extracción.
-    #
-    # Ejemplo de uso en dos celdas separadas:
-    #   Celda 2: execute_colab = run_colab()
-    #   Celda 3: execute_colab()
-    pass
-
-# En entorno script normal: importar y llamar directamente a las funciones.
+# Vista previa
+with st.expander("👁️ Vista previa de issues (primeras 50 filas)"):
+    df_preview = pd.DataFrame(filtered_issues)[[
+        'issue_key', 'summary', 'status', 'assignee',
+        'created_date', 'tiempo_ux_horas', 'tiempo_sw_horas'
+    ]].head(50)
+    st.dataframe(df_preview, use_container_width=True)
