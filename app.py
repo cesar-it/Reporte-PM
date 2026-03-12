@@ -20,7 +20,7 @@ from collections import defaultdict
 PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
-    "Angie Tomasto", "Tifany Brissette Ramos Espinoza",
+    "Angie Tomasto", "valeria vergaray",
     "crisbel aguilar", "Miguel Carreño"
 ]
 
@@ -555,8 +555,11 @@ st.download_button(
 
 # Vista previa
 with st.expander("👁️ Vista previa de issues (primeras 50 filas)"):
-    df_preview = pd.DataFrame(filtered_issues)[[
-        'issue_key', 'summary', 'status', 'assignee',
-        'created_date', 'tiempo_ux_horas', 'tiempo_sw_horas'
-    ]].head(50)
+    df_preview = pd.DataFrame(filtered_issues)[
+        ['issue_key', 'summary', 'status', 'assignee', 'created_date']
+    ].copy().head(50)
+    df_preview['tiempo_ux_horas'] = df_preview['issue_key'].map(
+        lambda k: time_map.get(k, {}).get('tiempo_ux_horas', ''))
+    df_preview['tiempo_sw_horas'] = df_preview['issue_key'].map(
+        lambda k: time_map.get(k, {}).get('tiempo_sw_horas', ''))
     st.dataframe(df_preview, use_container_width=True)
