@@ -31,7 +31,7 @@ ASSIGNEES = [
 ]
 
 ALL_STATUSES = [
-    "Por hacer"
+    "Por hacer",
     "BACKLOG UX",
     "EN CURSO DE UX",
     "BACKLOG SOFTWARE | COE",
@@ -42,7 +42,7 @@ ALL_STATUSES = [
     "A LA ESPERA DE BA/DATA",
     "A LA ESPERA DE MARKETING",
     "A LA ESPERA DE TERCEROS",
-    "DESECHADO"
+    "DESECHADO",
 ]
 
 # ============================================================
@@ -247,16 +247,21 @@ class JiraExtractor:
 
 
 # ============================================================
-# FILTRO DE ISSUES (solo por estado)
+# FILTRO DE ISSUES (por estado y por asignado)
 # ============================================================
 
-def apply_filters(issues, selected_statuses):
-    if not selected_statuses:
-        return issues
+def apply_filters(issues, selected_statuses, selected_assignees):
     filtered = []
     for issue in issues:
-        if issue['status'].upper().strip() in [s.upper().strip() for s in selected_statuses]:
-            filtered.append(issue)
+        # Filtro por estado
+        if selected_statuses:
+            if issue['status'].upper().strip() not in [s.upper().strip() for s in selected_statuses]:
+                continue
+        # Filtro por asignado
+        if selected_assignees:
+            if issue['assignee'].lower().strip() not in [a.lower().strip() for a in selected_assignees]:
+                continue
+        filtered.append(issue)
     return filtered
 
 
@@ -342,7 +347,16 @@ with st.sidebar:
     selected_statuses = st.multiselect(
         "Estados (vacío = todos)",
         options=ALL_STATUSES,
-        default=[]
+        default=[],
+        key="filter_status",
+    )
+
+    st.subheader("Asignado a")
+    selected_assignees = st.multiselect(
+        "Personas (vacío = todos)",
+        options=sorted(ASSIGNEES),
+        default=[],
+        key="filter_assignee",
     )
 
     st.subheader("Nombre del archivo")
@@ -402,14 +416,16 @@ if not all_issues:
 
 # Paso 2: Filtros
 with st.spinner("Aplicando filtros..."):
-    filtered_issues = apply_filters(all_issues, selected_statuses)
+    filtered_issues = apply_filters(all_issues, selected_statuses, selected_assignees)
 
 if not filtered_issues:
     st.warning("Ningún issue pasó los filtros aplicados. Ajusta los criterios en el sidebar.")
     st.stop()
 
-# Métrica
-st.metric("Issues en reporte", len(filtered_issues))
+# Métricas
+m1, m2 = st.columns(2)
+m1.metric("Issues en reporte", len(filtered_issues))
+m2.metric("Personas con issues", len({i['assignee'] for i in filtered_issues}))
 
 # Paso 3: Generar Excel
 with st.spinner("Generando archivo Excel..."):
