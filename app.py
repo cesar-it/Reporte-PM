@@ -556,13 +556,60 @@ st.download_button(
     use_container_width=True,
 )
 
-# Vista previa
-with st.expander("👁️ Vista previa de issues (primeras 50 filas)"):
-    df_preview = pd.DataFrame(filtered_issues)[
-        ['issue_key', 'summary', 'status', 'assignee', 'created_date']
-    ].copy().head(50)
-    df_preview['tiempo_ux_horas'] = df_preview['issue_key'].map(
-        lambda k: time_map.get(k, {}).get('tiempo_ux_horas', ''))
-    df_preview['tiempo_sw_horas'] = df_preview['issue_key'].map(
-        lambda k: time_map.get(k, {}).get('tiempo_sw_horas', ''))
-    st.dataframe(df_preview, use_container_width=True)
+# Tabla completa de resultados
+st.subheader(f"📋 Resultados — {len(filtered_issues)} issues")
+
+df_view = pd.DataFrame(filtered_issues)
+df_view['tiempo_ux_horas']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('tiempo_ux_horas', ''))
+df_view['tiempo_sw_horas']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('tiempo_sw_horas', ''))
+df_view['fecha_entrada_ux'] = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_entrada_ux', ''))
+df_view['fecha_salida_sw']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_salida_sw', ''))
+
+col_order_view = [
+    'proyecto_codigo', 'issue_key', 'url_ticket', 'issue_id', 'summary',
+    'status', 'issue_type', 'assignee',
+    'created_date', 'created_datetime',
+    'updated_date', 'updated_datetime',
+    'resolution', 'resolution_date', 'resolution_datetime',
+    'labels', 'categoria_AQN', 'PMBOK', 'informacion_completada',
+    'tiempo_ux_horas', 'fecha_entrada_ux',
+    'tiempo_sw_horas', 'fecha_salida_sw',
+    'description',
+]
+col_order_view = [c for c in col_order_view if c in df_view.columns]
+df_view = df_view[col_order_view]
+
+st.dataframe(
+    df_view,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        'url_ticket': st.column_config.LinkColumn(
+            label="🔗 URL Ticket",
+            display_text="https://prestamype\\.atlassian\\.net/browse/(.+)",
+        ),
+        'issue_key':             st.column_config.TextColumn("Clave"),
+        'proyecto_codigo':       st.column_config.TextColumn("Proyecto"),
+        'issue_id':              st.column_config.TextColumn("ID"),
+        'summary':               st.column_config.TextColumn("Resumen"),
+        'status':                st.column_config.TextColumn("Estado"),
+        'issue_type':            st.column_config.TextColumn("Tipo"),
+        'assignee':              st.column_config.TextColumn("Asignado a"),
+        'created_date':          st.column_config.TextColumn("Fecha creación"),
+        'created_datetime':      st.column_config.TextColumn("Fecha-hora creación"),
+        'updated_date':          st.column_config.TextColumn("Fecha actualización"),
+        'updated_datetime':      st.column_config.TextColumn("Fecha-hora actualización"),
+        'resolution':            st.column_config.TextColumn("Resolución"),
+        'resolution_date':       st.column_config.TextColumn("Fecha resolución"),
+        'resolution_datetime':   st.column_config.TextColumn("Fecha-hora resolución"),
+        'labels':                st.column_config.TextColumn("Etiquetas"),
+        'categoria_AQN':         st.column_config.TextColumn("Categoría AQN"),
+        'PMBOK':                 st.column_config.TextColumn("PMBOK"),
+        'informacion_completada': st.column_config.TextColumn("Info completada"),
+        'tiempo_ux_horas':       st.column_config.NumberColumn("Tiempo UX (hrs)", format="%.2f"),
+        'fecha_entrada_ux':      st.column_config.TextColumn("Fecha entrada UX"),
+        'tiempo_sw_horas':       st.column_config.NumberColumn("Tiempo SW (hrs)", format="%.2f"),
+        'fecha_salida_sw':       st.column_config.TextColumn("Fecha salida SW"),
+        'description':           st.column_config.TextColumn("Descripción"),
+    }
+)
