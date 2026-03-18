@@ -425,7 +425,7 @@ def build_excel_bytes(issues, time_map, changelog_list):
 # ============================================================
 
 st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-st.title("📊 Extractor JIRA — Reporte TD")
+st.title("Reporte TD - Seguimiento Jira")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
