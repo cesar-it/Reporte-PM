@@ -31,15 +31,18 @@ ASSIGNEES = [
 ]
 
 ALL_STATUSES = [
-    "BACKLOG",
+    "Por hacer"
     "BACKLOG UX",
     "EN CURSO DE UX",
     "BACKLOG SOFTWARE | COE",
     "BACKLOG SOFTWARE",
     "EN CURSO DE SOFTWARE | COE",
     "ATENDIDO",
-    "EN ESPERA",
-    "CANCELADO",
+    "A LA ESPERA DE LEGAL",
+    "A LA ESPERA DE BA/DATA",
+    "A LA ESPERA DE MARKETING",
+    "A LA ESPERA DE TERCEROS",
+    "DESECHADO"
 ]
 
 # ============================================================
