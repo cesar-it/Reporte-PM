@@ -325,7 +325,7 @@ def build_excel_bytes(issues):
 # ============================================================
 
 st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-st.title("📊 Extractor JIRA — Reporte Nuevo Equipo")
+st.title("Reporte AQN - Seguimiento Jira")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
