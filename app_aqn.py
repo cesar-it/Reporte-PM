@@ -5,7 +5,6 @@
 # Credenciales via st.secrets
 # ============================================================
 
-import os
 import io
 import time
 import requests
@@ -186,66 +185,62 @@ class JiraExtractor:
         }
 
 
-# ============================================================
-# CLASE: EXTRACTOR DE CHANGELOG
-# ============================================================
-
-class ChangelogExtractor:
-    def __init__(self):
-        self.auth    = HTTPBasicAuth(USERNAME, API_TOKEN)
-        self.headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
-        self.base    = JIRA_URL.rstrip('/')
-
-    def fetch_changelog(self, issue_key):
-        url    = f"{self.base}/rest/api/3/issue/{issue_key}/changelog"
-        result = []
-        start  = 0
-
-        while True:
-            try:
-                r = requests.get(
-                    url, params={'startAt': start, 'maxResults': 100},
-                    auth=self.auth, headers=self.headers
-                )
-                if r.status_code != 200:
-                    break
-                data   = r.json()
-                values = data.get('values', [])
-                if not values:
-                    break
-
-                for entry in values:
-                    created = entry.get('created', '')
-                    author  = entry.get('author', {}).get('displayName', 'Unknown')
-                    for item in entry.get('items', []):
-                        if item.get('field', '').lower() == 'status':
-                            result.append({
-                                'issue_key':   issue_key,
-                                'from_status': item.get('fromString', ''),
-                                'to_status':   item.get('toString', ''),
-                                'change_dt':   created[:19].replace('T', ' ') if len(created) >= 19 else created,
-                                'changed_by':  author,
-                            })
-
-                if data.get('isLast', True):
-                    break
-                start += 100
-            except Exception:
-                break
-
-        return result
-
-    def fetch_all(self, issue_keys, progress_bar=None, log_fn=None):
-        all_changes = []
-        total = len(issue_keys)
-        for i, key in enumerate(issue_keys, 1):
-            all_changes.extend(self.fetch_changelog(key))
-            if progress_bar:
-                progress_bar.progress(i / total, text=f"Changelog {i}/{total} issues")
-            if log_fn and (i % 20 == 0 or i == total):
-                log_fn(f"Changelog {i}/{total}")
-            time.sleep(0.12)
-        return all_changes
+# # ============================================================
+# # CLASE: EXTRACTOR DE CHANGELOG  (comentado — no requerido)
+# # ============================================================
+#
+# class ChangelogExtractor:
+#     def __init__(self):
+#         self.auth    = HTTPBasicAuth(USERNAME, API_TOKEN)
+#         self.headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
+#         self.base    = JIRA_URL.rstrip('/')
+#
+#     def fetch_changelog(self, issue_key):
+#         url    = f"{self.base}/rest/api/3/issue/{issue_key}/changelog"
+#         result = []
+#         start  = 0
+#         while True:
+#             try:
+#                 r = requests.get(
+#                     url, params={'startAt': start, 'maxResults': 100},
+#                     auth=self.auth, headers=self.headers
+#                 )
+#                 if r.status_code != 200:
+#                     break
+#                 data   = r.json()
+#                 values = data.get('values', [])
+#                 if not values:
+#                     break
+#                 for entry in values:
+#                     created = entry.get('created', '')
+#                     author  = entry.get('author', {}).get('displayName', 'Unknown')
+#                     for item in entry.get('items', []):
+#                         if item.get('field', '').lower() == 'status':
+#                             result.append({
+#                                 'issue_key':   issue_key,
+#                                 'from_status': item.get('fromString', ''),
+#                                 'to_status':   item.get('toString', ''),
+#                                 'change_dt':   created[:19].replace('T', ' ') if len(created) >= 19 else created,
+#                                 'changed_by':  author,
+#                             })
+#                 if data.get('isLast', True):
+#                     break
+#                 start += 100
+#             except Exception:
+#                 break
+#         return result
+#
+#     def fetch_all(self, issue_keys, progress_bar=None, log_fn=None):
+#         all_changes = []
+#         total = len(issue_keys)
+#         for i, key in enumerate(issue_keys, 1):
+#             all_changes.extend(self.fetch_changelog(key))
+#             if progress_bar:
+#                 progress_bar.progress(i / total, text=f"Changelog {i}/{total} issues")
+#             if log_fn and (i % 20 == 0 or i == total):
+#                 log_fn(f"Changelog {i}/{total}")
+#             time.sleep(0.12)
+#         return all_changes
 
 
 # ============================================================
@@ -266,7 +261,7 @@ def apply_filters(issues, selected_statuses):
 # GENERADOR DE EXCEL
 # ============================================================
 
-def build_excel_bytes(issues, changelog_list):
+def build_excel_bytes(issues):
     from openpyxl.styles import PatternFill, Font, Alignment
 
     df = pd.DataFrame(issues)
@@ -283,56 +278,40 @@ def build_excel_bytes(issues, changelog_list):
     col_order = [c for c in col_order if c in df.columns]
     df = df[col_order]
 
-    keys_in_report = set(df['issue_key'].tolist())
-    cl_filtered = [c for c in changelog_list if c['issue_key'] in keys_in_report]
-    df_cl = pd.DataFrame(cl_filtered) if cl_filtered else pd.DataFrame(
-        columns=['issue_key', 'from_status', 'to_status', 'change_dt', 'changed_by']
-    )
-    if not df_cl.empty:
-        df_cl = df_cl.sort_values(['issue_key', 'change_dt']).reset_index(drop=True)
-    df_cl.columns = ['Issue Key', 'De Estado', 'A Estado', 'Fecha y Hora', 'Modificado por']
-
-    def style_header(ws, columns, special_cols, sp_fill, sp_font_color):
+    def style_header(ws, columns):
         for i, col in enumerate(columns, 1):
-            cell = ws.cell(row=1, column=i)
-            is_sp          = col in special_cols
-            cell.fill      = PatternFill("solid", fgColor=sp_fill if is_sp else "1a73e8")
-            cell.font      = Font(bold=True, color=sp_font_color if is_sp else "FFFFFF", size=10)
+            cell           = ws.cell(row=1, column=i)
+            cell.fill      = PatternFill("solid", fgColor="1a73e8")
+            cell.font      = Font(bold=True, color="FFFFFF", size=10)
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    col_w_issues = {
+    col_w = {
         'proyecto_codigo': 16, 'issue_key': 14, 'issue_id': 12, 'url_ticket': 45, 'summary': 40,
         'status': 20, 'issue_type': 16, 'assignee': 22,
         'created_date': 14, 'created_datetime': 20,
         'updated_date': 14, 'updated_datetime': 20,
         'resolution': 16, 'resolution_date': 14, 'resolution_datetime': 20,
         'labels': 20, 'categoria_AQN': 22, 'PMBOK': 18,
-        'informacion_completada': 24,
-        'description': 50,
+        'informacion_completada': 24, 'description': 50,
     }
-    col_w_cl = {
-        'Issue Key': 14, 'De Estado': 30, 'A Estado': 30,
-        'Fecha y Hora': 22, 'Modificado por': 24,
-    }
+
+    # # Hoja Changelog (comentada — desactivada)
+    # df_cl = pd.DataFrame(changelog_list)
+    # df_cl.columns = ['Issue Key', 'De Estado', 'A Estado', 'Fecha y Hora', 'Modificado por']
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Hoja 1: Issues
         df.to_excel(writer, index=False, sheet_name='Issues')
         ws_i = writer.sheets['Issues']
-        style_header(ws_i, df.columns, set(), "1a73e8", "FFFFFF")
+        style_header(ws_i, df.columns)
         for i, col in enumerate(df.columns, 1):
-            ws_i.column_dimensions[ws_i.cell(row=1, column=i).column_letter].width = col_w_issues.get(col, 18)
+            ws_i.column_dimensions[ws_i.cell(row=1, column=i).column_letter].width = col_w.get(col, 18)
         ws_i.freeze_panes = 'A2'
 
-        # Hoja 2: Changelog
-        df_cl.to_excel(writer, index=False, sheet_name='Changelog')
-        ws_c = writer.sheets['Changelog']
-        style_header(ws_c, df_cl.columns,
-                     {'De Estado', 'A Estado'}, 'E8F0FE', '1a3e8a')
-        for i, col in enumerate(df_cl.columns, 1):
-            ws_c.column_dimensions[ws_c.cell(row=1, column=i).column_letter].width = col_w_cl.get(col, 20)
-        ws_c.freeze_panes = 'A2'
+        # # Hoja Changelog (comentada — desactivada)
+        # df_cl.to_excel(writer, index=False, sheet_name='Changelog')
+        # ws_c = writer.sheets['Changelog']
+        # ...
 
     output.seek(0)
     return output.read()
@@ -343,28 +322,28 @@ def build_excel_bytes(issues, changelog_list):
 # ============================================================
 
 st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-st.title("Reporte AQN - Seguimiento Jira")
+st.title("📊 Extractor JIRA — Reporte Nuevo Equipo")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
-    st.header("Configuración")
+    st.header("⚙️ Configuración")
 
-    st.subheader("Creación del ticket")
+    st.subheader("📅 Creación del ticket")
     col_a, col_b = st.columns(2)
     with col_a:
         date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date())
     with col_b:
         date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date())
 
-    st.subheader("Estado del ticket")
+    st.subheader("🔖 Estado del ticket")
     selected_statuses = st.multiselect(
         "Estados (vacío = todos)",
         options=ALL_STATUSES,
         default=[]
     )
 
-    st.subheader("Nombre del archivo")
-    filename_input = st.text_input("Nombre (sin .xlsx)", value="REPORTE_AQN")
+    st.subheader("💾 Nombre del archivo")
+    filename_input = st.text_input("Nombre (sin .xlsx)", value="reporte_jira_equipo")
 
     run_btn = st.button("🚀 Ejecutar extracción", type="primary", use_container_width=True)
 
@@ -385,8 +364,7 @@ if not ok:
     st.stop()
 st.success(f"✅ Conectado como: {display_name}")
 
-ch_extractor = ChangelogExtractor()
-all_issues   = []
+all_issues = []
 
 # Paso 1: Issues
 with st.status("Extrayendo issues...", expanded=True) as status_issues:
@@ -408,17 +386,18 @@ if not all_issues:
     st.warning("No se encontraron issues en el rango de fechas seleccionado.")
     st.stop()
 
-# Paso 2: Changelog
-issue_keys = [i['issue_key'] for i in all_issues]
-with st.status("Extrayendo changelog...", expanded=True) as status_cl:
-    prog_bar = st.progress(0, text="Iniciando...")
-    changelog = ch_extractor.fetch_all(issue_keys, progress_bar=prog_bar)
-    status_cl.update(
-        label=f"✅ Changelog extraído: {len(changelog)} cambios de estado",
-        state="complete"
-    )
+# # Paso 2: Changelog (comentado — desactivado)
+# issue_keys = [i['issue_key'] for i in all_issues]
+# ch_extractor = ChangelogExtractor()
+# with st.status("Extrayendo changelog...", expanded=True) as status_cl:
+#     prog_bar = st.progress(0, text="Iniciando...")
+#     changelog = ch_extractor.fetch_all(issue_keys, progress_bar=prog_bar)
+#     status_cl.update(
+#         label=f"✅ Changelog extraído: {len(changelog)} cambios de estado",
+#         state="complete"
+#     )
 
-# Paso 3: Filtros
+# Paso 2: Filtros
 with st.spinner("Aplicando filtros..."):
     filtered_issues = apply_filters(all_issues, selected_statuses)
 
@@ -426,16 +405,12 @@ if not filtered_issues:
     st.warning("Ningún issue pasó los filtros aplicados. Ajusta los criterios en el sidebar.")
     st.stop()
 
-# Métricas
-cl_count = len([c for c in changelog if c['issue_key'] in {i['issue_key'] for i in filtered_issues}])
+# Métrica
+st.metric("Issues en reporte", len(filtered_issues))
 
-m1, m2 = st.columns(2)
-m1.metric("Issues en reporte",   len(filtered_issues))
-m2.metric("Registros changelog", cl_count)
-
-# Paso 4: Generar Excel
+# Paso 3: Generar Excel
 with st.spinner("Generando archivo Excel..."):
-    excel_bytes = build_excel_bytes(filtered_issues, changelog)
+    excel_bytes = build_excel_bytes(filtered_issues)
 
 safe_name = "".join(c for c in filename_input.strip() if c.isalnum() or c in ('_', '-')).strip() or 'jira_report'
 excel_filename = f"{safe_name}.xlsx"
