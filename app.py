@@ -25,7 +25,8 @@ ASSIGNEES = [
 ]
 
 STATE_EN_CURSO_UX = "EN CURSO DE UX"
-STATE_BACKLOG_SW  = "EBACKLOG SOFTWARE | COE"
+STATE_BACKLOG_SW       = "BACKLOG SOFTWARE | COE"
+STATE_BACKLOG_SW_OLD  = "BACKLOG SOFTWARE"
 STATE_EN_CURSO_SW = "EN CURSO DE SOFTWARE | COE"
 STATE_ATENDIDO    = "ATENDIDO"
 
@@ -34,6 +35,7 @@ ALL_STATUSES = [
     "BACKLOG UX",
     STATE_EN_CURSO_UX,
     STATE_BACKLOG_SW,
+    STATE_BACKLOG_SW_OLD,
     STATE_EN_CURSO_SW,
     STATE_ATENDIDO,
     "EN ESPERA",
@@ -274,7 +276,7 @@ def compute_times(issue_keys, changelog_list):
                 dt_entrada_ux = dt.date()
 
             if (from_s == STATE_EN_CURSO_UX and
-                    to_s in (STATE_BACKLOG_SW, STATE_EN_CURSO_SW) and
+                    to_s in (STATE_BACKLOG_SW, STATE_BACKLOG_SW_OLD, STATE_EN_CURSO_SW) and
                     ts_ux_in is not None and t_ux is None):
                 t_ux         = round((dt - ts_ux_in).total_seconds() / 3600, 2)
                 dt_salida_sw = dt.date()
