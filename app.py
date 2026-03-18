@@ -164,6 +164,7 @@ class JiraExtractor:
         return {
             'proyecto_codigo':        project_key,
             'issue_key':              issue.get('key', ''),
+            'url_ticket':             f"https://prestamype.atlassian.net/browse/{issue.get('key', '')}",
             'issue_id':               issue.get('id', ''),
             'summary':                f.get('summary', ''),
             'description':            clean_desc(f.get('description')),
@@ -347,7 +348,7 @@ def build_excel_bytes(issues, time_map, changelog_list):
     df['fecha_salida_sw']  = df['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_salida_sw', ''))
 
     col_order = [
-        'proyecto_codigo', 'issue_key', 'issue_id', 'summary',
+        'proyecto_codigo', 'issue_key', 'url_ticket', 'issue_id', 'summary',
         'status', 'issue_type', 'assignee',
         'created_date', 'created_datetime',
         'updated_date', 'updated_datetime',
@@ -378,7 +379,7 @@ def build_excel_bytes(issues, time_map, changelog_list):
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     col_w_issues = {
-        'proyecto_codigo': 16, 'issue_key': 14, 'issue_id': 12, 'summary': 40,
+        'proyecto_codigo': 16, 'issue_key': 14, 'issue_id': 12, 'url_ticket': 45, 'summary': 40,
         'status': 20, 'issue_type': 16, 'assignee': 22,
         'created_date': 14, 'created_datetime': 20,
         'updated_date': 14, 'updated_datetime': 20,
