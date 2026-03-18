@@ -326,24 +326,24 @@ st.title("📊 Extractor JIRA — Reporte Nuevo Equipo")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Configuración")
+    st.header("Configuración")
 
-    st.subheader("📅 Creación del ticket")
+    st.subheader("Creación del ticket")
     col_a, col_b = st.columns(2)
     with col_a:
         date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date())
     with col_b:
         date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date())
 
-    st.subheader("🔖 Estado del ticket")
+    st.subheader("Estado del ticket")
     selected_statuses = st.multiselect(
         "Estados (vacío = todos)",
         options=ALL_STATUSES,
         default=[]
     )
 
-    st.subheader("💾 Nombre del archivo")
-    filename_input = st.text_input("Nombre (sin .xlsx)", value="reporte_jira_equipo")
+    st.subheader("Nombre del archivo")
+    filename_input = st.text_input("Nombre (sin .xlsx)", value="REPORTE_AQN")
 
     run_btn = st.button("🚀 Ejecutar extracción", type="primary", use_container_width=True)
 
