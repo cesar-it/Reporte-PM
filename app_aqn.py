@@ -21,7 +21,6 @@ PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
     "valeria vergaray",
-    "pcateriano",
     "Agustin Gutierrez",
     "Marcelo Reyes",
     "Moisés Ayala",
