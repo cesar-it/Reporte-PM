@@ -20,7 +20,7 @@ from collections import defaultdict
 PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
-    "Angie Tomasto", "valeria vergaray",
+    "Angie Tomasto", "Tifany Brissette Ramos Espinoza",
     "crisbel aguilar", "Miguel Carreño"
 ]
 
