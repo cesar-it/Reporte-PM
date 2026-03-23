@@ -1,0 +1,15 @@
+name: Keep Multiple Apps Alive
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # Se ejecuta cada 6 horas para que no se duerman
+  workflow_dispatch:
+
+jobs:
+  ping_apps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Apps
+        run: |
+          curl -I https://reporte-aqn-nru285dyuiptytxndqrpva.streamlit.app/
+          curl -I https://reporte-pm-je5dehhmv3nq3zsjeakx5f.streamlit.app/
