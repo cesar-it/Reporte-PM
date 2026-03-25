@@ -42,6 +42,10 @@ ALL_STATUSES = [
     "CANCELADO",
 ]
 
+# Definición de estados para validación de las nuevas columnas
+UX_STATES = {"EN CURSO DE UX", "BACKLOG UX", "BACKLOG DE UX"}
+SW_STATES = {"EN CURSO DE SOFTWARE | COE", "BACKLOG SOFTWARE", "BACKLOG SOFTWARE | COE"}
+
 # ============================================================
 # CREDENCIALES DESDE st.secrets
 # ============================================================
@@ -251,7 +255,7 @@ class ChangelogExtractor:
 # LÓGICA DE NEGOCIO
 # ============================================================
 
-def compute_times(issue_keys, changelog_list):
+def compute_times(issues, changelog_list):
     cl_by_issue = defaultdict(list)
     for c in changelog_list:
         cl_by_issue[c['issue_key']].append(c)
@@ -259,14 +263,28 @@ def compute_times(issue_keys, changelog_list):
         cl_by_issue[key].sort(key=lambda x: x['change_dt'])
 
     results = {}
-    for key in issue_keys:
-        changes  = cl_by_issue.get(key, [])
+    for issue in issues:
+        key = issue['issue_key']
+        curr_status = issue.get('status', '').upper().strip()
+        changes = cl_by_issue.get(key, [])
+        
         t_ux = t_sw = ts_ux_in = ts_sw_in = None
         dt_entrada_ux = dt_salida_sw = None
+        
+        # Validar si en su estado actual ya pertenece a UX o SW
+        paso_ux = curr_status in UX_STATES
+        paso_sw = curr_status in SW_STATES
 
         for c in changes:
             to_s   = c['to_status'].upper().strip()
             from_s = c['from_status'].upper().strip()
+            
+            # Validación de paso por áreas (historico)
+            if to_s in UX_STATES or from_s in UX_STATES:
+                paso_ux = True
+            if to_s in SW_STATES or from_s in SW_STATES:
+                paso_sw = True
+            
             try:
                 dt = datetime.strptime(c['change_dt'], '%Y-%m-%d %H:%M:%S')
             except Exception:
@@ -297,6 +315,8 @@ def compute_times(issue_keys, changelog_list):
             'tiempo_sw_horas':  t_sw if t_sw is not None else '',
             'fecha_entrada_ux': str(dt_entrada_ux) if dt_entrada_ux else '',
             'fecha_salida_sw':  str(dt_salida_sw)  if dt_salida_sw  else '',
+            'paso_por_ux':      'Sí' if paso_ux else 'No',
+            'paso_por_sw':      'Sí' if paso_sw else 'No',
         }
     return results
 
@@ -346,6 +366,8 @@ def build_excel_bytes(issues, time_map, changelog_list):
     df['tiempo_sw_horas']  = df['issue_key'].map(lambda k: time_map.get(k, {}).get('tiempo_sw_horas', ''))
     df['fecha_entrada_ux'] = df['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_entrada_ux', ''))
     df['fecha_salida_sw']  = df['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_salida_sw', ''))
+    df['paso_por_ux']      = df['issue_key'].map(lambda k: time_map.get(k, {}).get('paso_por_ux', 'No'))
+    df['paso_por_sw']      = df['issue_key'].map(lambda k: time_map.get(k, {}).get('paso_por_sw', 'No'))
 
     col_order = [
         'proyecto_codigo', 'issue_key', 'url_ticket', 'issue_id', 'summary',
@@ -354,8 +376,8 @@ def build_excel_bytes(issues, time_map, changelog_list):
         'updated_date', 'updated_datetime',
         'resolution', 'resolution_date', 'resolution_datetime',
         'labels', 'categoria_AQN', 'PMBOK', 'informacion_completada',
-        'tiempo_ux_horas', 'fecha_entrada_ux',
-        'tiempo_sw_horas', 'fecha_salida_sw',
+        'paso_por_ux', 'tiempo_ux_horas', 'fecha_entrada_ux',
+        'paso_por_sw', 'tiempo_sw_horas', 'fecha_salida_sw',
         'description',
     ]
     col_order = [c for c in col_order if c in df.columns]
@@ -386,8 +408,8 @@ def build_excel_bytes(issues, time_map, changelog_list):
         'resolution': 16, 'resolution_date': 14, 'resolution_datetime': 20,
         'labels': 20, 'categoria_AQN': 22, 'PMBOK': 18,
         'informacion_completada': 24,
-        'tiempo_ux_horas': 18, 'fecha_entrada_ux': 18,
-        'tiempo_sw_horas': 18, 'fecha_salida_sw': 18,
+        'paso_por_ux': 14, 'tiempo_ux_horas': 18, 'fecha_entrada_ux': 18,
+        'paso_por_sw': 14, 'tiempo_sw_horas': 18, 'fecha_salida_sw': 18,
         'description': 50,
     }
     col_w_cl = {
@@ -401,7 +423,7 @@ def build_excel_bytes(issues, time_map, changelog_list):
         df.to_excel(writer, index=False, sheet_name='Issues')
         ws_i = writer.sheets['Issues']
         style_header(ws_i, df.columns,
-                     {'tiempo_ux_horas', 'fecha_entrada_ux', 'tiempo_sw_horas', 'fecha_salida_sw'},
+                     {'paso_por_ux', 'tiempo_ux_horas', 'fecha_entrada_ux', 'paso_por_sw', 'tiempo_sw_horas', 'fecha_salida_sw'},
                      'FFF2CC', '7F6000')
         for i, col in enumerate(df.columns, 1):
             ws_i.column_dimensions[ws_i.cell(row=1, column=i).column_letter].width = col_w_issues.get(col, 18)
@@ -425,13 +447,13 @@ def build_excel_bytes(issues, time_map, changelog_list):
 # ============================================================
 
 st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-st.title("📊 Extractor JIRA — Reporte TD")
+st.title(" Extractor JIRA — Reporte TD")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Configuración")
+    st.header(" Configuración")
 
-    st.subheader("📅 Creación del ticket")
+    st.subheader(" Creación del ticket")
     creacion_active = st.checkbox("Activar filtro por fecha de creación", value=True)
     col_a, col_b = st.columns(2)
     with col_a:
@@ -441,31 +463,31 @@ with st.sidebar:
         date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date(),
                                   disabled=not creacion_active)
 
-    st.subheader("🔖 Estado del ticket")
+    st.subheader(" Estado del ticket")
     selected_statuses = st.multiselect(
         "Estados (vacío = todos)",
         options=ALL_STATUSES,
         default=[]
     )
 
-    st.subheader("🎨 Transición → EN CURSO UX")
+    st.subheader(" Transición → EN CURSO UX")
     ux_active = st.checkbox("Activar filtro UX", value=False)
     ux_from   = st.date_input("UX Desde", value=datetime(2025, 12, 1).date(),
                                disabled=not ux_active, key="ux_from")
     ux_to     = st.date_input("UX Hasta", value=datetime(2025, 12, 31).date(),
                                disabled=not ux_active, key="ux_to")
 
-    st.subheader("💻 Transición → BACKLOG / EN CURSO SW")
+    st.subheader(" Transición → BACKLOG / EN CURSO SW")
     sw_active = st.checkbox("Activar filtro SW", value=False)
     sw_from   = st.date_input("SW Desde", value=datetime(2025, 12, 1).date(),
                                disabled=not sw_active, key="sw_from")
     sw_to     = st.date_input("SW Hasta", value=datetime(2025, 12, 31).date(),
                                disabled=not sw_active, key="sw_to")
 
-    st.subheader("💾 Nombre del archivo")
+    st.subheader(" Nombre del archivo")
     filename_input = st.text_input("Nombre (sin .xlsx)", value="reporte_jira_TD")
 
-    run_btn = st.button("🚀 Ejecutar extracción", type="primary", use_container_width=True)
+    run_btn = st.button(" Ejecutar extracción", type="primary", use_container_width=True)
 
 # ── Panel principal ──────────────────────────────────────────
 if not run_btn:
@@ -483,7 +505,7 @@ ok, display_name = extractor.test_connection()
 if not ok:
     st.error(f"Error de conexión con JIRA: {display_name}")
     st.stop()
-st.success(f"✅ Conectado como: {display_name}")
+st.success(f" Conectado como: {display_name}")
 
 ch_extractor = ChangelogExtractor()
 all_issues   = []
@@ -500,7 +522,7 @@ with st.status("Extrayendo issues...", expanded=True) as status_issues:
         )
         all_issues.extend(issues)
     status_issues.update(
-        label=f"✅ Issues extraídos: {len(all_issues)}",
+        label=f" Issues extraídos: {len(all_issues)}",
         state="complete"
     )
 
@@ -514,13 +536,14 @@ with st.status("Extrayendo changelog...", expanded=True) as status_cl:
     prog_bar = st.progress(0, text="Iniciando...")
     changelog = ch_extractor.fetch_all(issue_keys, progress_bar=prog_bar)
     status_cl.update(
-        label=f"✅ Changelog extraído: {len(changelog)} cambios de estado",
+        label=f" Changelog extraído: {len(changelog)} cambios de estado",
         state="complete"
     )
 
 # Paso 3: Tiempos + filtros
 with st.spinner("Calculando tiempos y aplicando filtros..."):
-    time_map        = compute_times(issue_keys, changelog)
+    # IMPORTANTE: Ahora pasamos all_issues en lugar de issue_keys para leer el estado actual
+    time_map        = compute_times(all_issues, changelog)
     filtered_issues = apply_filters(
         all_issues, time_map,
         selected_statuses,
@@ -560,13 +583,15 @@ st.download_button(
 )
 
 # Tabla completa de resultados
-st.subheader(f"📋 Resultados — {len(filtered_issues)} issues")
+st.subheader(f" Resultados — {len(filtered_issues)} issues")
 
 df_view = pd.DataFrame(filtered_issues)
 df_view['tiempo_ux_horas']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('tiempo_ux_horas', ''))
 df_view['tiempo_sw_horas']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('tiempo_sw_horas', ''))
 df_view['fecha_entrada_ux'] = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_entrada_ux', ''))
 df_view['fecha_salida_sw']  = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('fecha_salida_sw', ''))
+df_view['paso_por_ux']      = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('paso_por_ux', 'No'))
+df_view['paso_por_sw']      = df_view['issue_key'].map(lambda k: time_map.get(k, {}).get('paso_por_sw', 'No'))
 
 col_order_view = [
     'proyecto_codigo', 'issue_key', 'url_ticket', 'issue_id', 'summary',
@@ -575,8 +600,8 @@ col_order_view = [
     'updated_date', 'updated_datetime',
     'resolution', 'resolution_date', 'resolution_datetime',
     'labels', 'categoria_AQN', 'PMBOK', 'informacion_completada',
-    'tiempo_ux_horas', 'fecha_entrada_ux',
-    'tiempo_sw_horas', 'fecha_salida_sw',
+    'paso_por_ux', 'tiempo_ux_horas', 'fecha_entrada_ux',
+    'paso_por_sw', 'tiempo_sw_horas', 'fecha_salida_sw',
     'description',
 ]
 col_order_view = [c for c in col_order_view if c in df_view.columns]
@@ -609,8 +634,10 @@ st.dataframe(
         'categoria_AQN':         st.column_config.TextColumn("Categoría AQN"),
         'PMBOK':                 st.column_config.TextColumn("PMBOK"),
         'informacion_completada': st.column_config.TextColumn("Info completada"),
+        'paso_por_ux':           st.column_config.TextColumn("Paso por UX"),
         'tiempo_ux_horas':       st.column_config.NumberColumn("Tiempo UX (hrs)", format="%.2f"),
         'fecha_entrada_ux':      st.column_config.TextColumn("Fecha entrada UX"),
+        'paso_por_sw':           st.column_config.TextColumn("Paso por SW"),
         'tiempo_sw_horas':       st.column_config.NumberColumn("Tiempo SW (hrs)", format="%.2f"),
         'fecha_salida_sw':       st.column_config.TextColumn("Fecha salida SW"),
         'description':           st.column_config.TextColumn("Descripción"),
