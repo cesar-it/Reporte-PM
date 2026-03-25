@@ -20,8 +20,8 @@ from collections import defaultdict
 PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
-    "Angie Tomasto", "Tifany Brissette Rampos Espinoza", "amundaca", "Noelia Terrazas",
-    "crisbel aguilar", "Miguel Carreño"
+    "Angie Tomasto", "Tifany Brissette Ramos Espinoza", "amundaca", "Noelia Terrazas",
+    "crisbel aguilar", "Miguel Carreño", "José Bendezú"
 ]
 
 STATE_EN_CURSO_UX = "EN CURSO DE UX"
