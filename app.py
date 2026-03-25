@@ -20,7 +20,7 @@ from collections import defaultdict
 PROJECT_KEYS = ['PM']
 
 ASSIGNEES = [
-    "Angie Tomasto", "Tifany Brissette Ramos Espinoza",
+    "Angie Tomasto", "valeria vergaray",
     "crisbel aguilar", "Miguel Carreño"
 ]
 
@@ -425,18 +425,21 @@ def build_excel_bytes(issues, time_map, changelog_list):
 # ============================================================
 
 st.set_page_config(page_title="Extractor JIRA", page_icon="📊", layout="wide")
-st.title("Reporte TD - Seguimiento Jira")
+st.title("📊 Extractor JIRA — Reporte TD")
 
 # ── Sidebar ─────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configuración")
 
     st.subheader("📅 Creación del ticket")
+    creacion_active = st.checkbox("Activar filtro por fecha de creación", value=True)
     col_a, col_b = st.columns(2)
     with col_a:
-        date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date())
+        date_from = st.date_input("Desde", value=datetime(2025, 12, 1).date(),
+                                  disabled=not creacion_active)
     with col_b:
-        date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date())
+        date_to   = st.date_input("Hasta", value=datetime(2025, 12, 31).date(),
+                                  disabled=not creacion_active)
 
     st.subheader("🔖 Estado del ticket")
     selected_statuses = st.multiselect(
@@ -470,7 +473,7 @@ if not run_btn:
     st.stop()
 
 # Validación de fechas
-if date_from > date_to:
+if creacion_active and date_from > date_to:
     st.error("La fecha de inicio no puede ser mayor a la fecha fin.")
     st.stop()
 
@@ -491,8 +494,8 @@ with st.status("Extrayendo issues...", expanded=True) as status_issues:
         st.write(f"Proyecto: **{pk}**")
         issues = extractor.fetch_issues(
             pk,
-            date_from.strftime('%Y-%m-%d'),
-            date_to.strftime('%Y-%m-%d'),
+            date_from.strftime('%Y-%m-%d') if creacion_active else "2020-01-01",
+            date_to.strftime('%Y-%m-%d')   if creacion_active else "2099-12-31",
             log_fn=lambda m: st.write(m)
         )
         all_issues.extend(issues)
